@@ -7,10 +7,18 @@ import (
 )
 
 // Item represents a function call entry.
+//
+// CallerName and CallerReceiver identify the function declaration that
+// lexically encloses the call site. They are empty when the call appears
+// at package level (e.g. inside a var/const initializer). For a method,
+// CallerReceiver mirrors the raw receiver text from the function entry —
+// for example, "*SMAERS" or "SMAERS".
 type Item struct {
-	Ref    common.Ref
-	Callee string
-	Node   *ast.CallExpr
+	Ref            common.Ref
+	Callee         string
+	CallerName     string
+	CallerReceiver string
+	Node           *ast.CallExpr
 }
 
 // MatchFunc is a function type that matches function call entries.

@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 1
+const cacheVersion = 2
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
@@ -81,8 +81,10 @@ type variableSnap struct {
 }
 
 type functionCallSnap struct {
-	Ref    common.Ref
-	Callee string
+	Ref            common.Ref
+	Callee         string
+	CallerName     string
+	CallerReceiver string
 }
 
 type dependencySnap struct {
@@ -282,7 +284,12 @@ func buildSnap(ws *Workspace) workspaceSnap {
 	}
 
 	for _, fc := range ws.FunctionCalls.All() {
-		snap.FunctionCalls = append(snap.FunctionCalls, functionCallSnap{Ref: fc.Ref, Callee: fc.Callee})
+		snap.FunctionCalls = append(snap.FunctionCalls, functionCallSnap{
+			Ref:            fc.Ref,
+			Callee:         fc.Callee,
+			CallerName:     fc.CallerName,
+			CallerReceiver: fc.CallerReceiver,
+		})
 	}
 
 	for _, d := range ws.Dependencies.All() {
@@ -336,7 +343,12 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 	}
 
 	for _, fcs := range snap.FunctionCalls {
-		wb.AddFunctionCall(functioncalls.Item{Ref: fcs.Ref, Callee: fcs.Callee})
+		wb.AddFunctionCall(functioncalls.Item{
+			Ref:            fcs.Ref,
+			Callee:         fcs.Callee,
+			CallerName:     fcs.CallerName,
+			CallerReceiver: fcs.CallerReceiver,
+		})
 	}
 
 	for _, ds := range snap.Dependencies {

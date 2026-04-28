@@ -135,6 +135,29 @@ func TestSaveAndLoadWorkspaceFromDisk_PreservesRefs(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadWorkspaceFromDisk_PreservesCallerIdentity(t *testing.T) {
+	dir := fixtureModDir(t)
+	ws, err := LoadWorkspace(context.Background(), dir)
+	require.NoError(t, err)
+
+	cachePath := filepath.Join(t.TempDir(), "workspace.gob")
+	require.NoError(t, saveWorkspaceToDisk(ws, cachePath))
+
+	loaded, err := loadWorkspaceFromDisk(cachePath)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	origCalls := ws.FunctionCalls.All()
+	cachedCalls := loaded.FunctionCalls.All()
+	require.Equal(t, len(origCalls), len(cachedCalls))
+	for i := range origCalls {
+		assert.Equal(t, origCalls[i].Callee, cachedCalls[i].Callee, "Callee mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerName, cachedCalls[i].CallerName, "CallerName mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerReceiver, cachedCalls[i].CallerReceiver, "CallerReceiver mismatch at index %d", i)
+		assert.Nil(t, cachedCalls[i].Node, "Node should be nil after cache load")
+	}
+}
+
 func TestSaveAndLoadWorkspaceFromDisk_PreservesDependenciesOnFiles(t *testing.T) {
 	dir := fixtureModDir(t)
 	ws, err := LoadWorkspace(context.Background(), dir)

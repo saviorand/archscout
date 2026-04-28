@@ -470,52 +470,97 @@ func indexFileEntries(
 		return
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.TypeSpec:
-			workspace.AddType(types.Item{
-				Ref:  newRef(pkg, filename, node, common.RefKindType, typeMatchText(node.Name.Name, exprKind(node.Type))),
-				Name: node.Name.Name,
-				Kind: exprKind(node.Type),
-				Node: node,
-			})
+	ast.Walk(&entryVisitor{
+		workspace: workspace,
+		pkg:       pkg,
+		filename:  filename,
+		file:      file,
+	}, file)
+}
 
-		case *ast.FuncDecl:
-			receiver := ""
-			if node.Recv != nil && len(node.Recv.List) > 0 {
-				receiver = exprText(node.Recv.List[0].Type)
-			}
-			workspace.AddFunction(functions.Item{
-				Ref:      newRef(pkg, filename, node, common.RefKindFunction, functionMatchText(node.Name.Name, receiver)),
-				Name:     node.Name.Name,
-				Receiver: receiver,
-				Node:     node,
-			})
+// entryVisitor populates the workspace builder while walking a single file.
+// It tracks the enclosing *ast.FuncDecl so that call entries can be tagged
+// with the lexical caller they live inside.
+//
+// Function literals (*ast.FuncLit) are intentionally not pushed onto the
+// stack: a call inside a closure inside a method should still report the
+// enclosing FuncDecl as its caller.
+type entryVisitor struct {
+	workspace *workspacebuilder.Builder
+	pkg       packages.Item
+	filename  string
+	file      *ast.File
+	enclosing *ast.FuncDecl
+}
 
-		case *ast.ValueSpec:
-			kind := "var"
-			if genDecl, ok := enclosingGenDecl(file, node); ok && genDecl.Tok == token.CONST {
-				kind = "const"
-			}
-			for _, name := range node.Names {
-				workspace.AddVariable(variables.Item{
-					Ref:  newRef(pkg, filename, name, common.RefKindVariable, variableMatchText(name.Name, kind)),
-					Name: name.Name,
-					Kind: kind,
-					Node: name,
-				})
-			}
+func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
+	if n == nil {
+		return nil
+	}
 
-		case *ast.CallExpr:
-			workspace.AddFunctionCall(functioncalls.Item{
-				Ref:    newRef(pkg, filename, node, common.RefKindFunctionCall, callMatchText(pkg.FileSet, node)),
-				Callee: calleeName(node.Fun),
-				Node:   node,
+	switch node := n.(type) {
+	case *ast.TypeSpec:
+		v.workspace.AddType(types.Item{
+			Ref:  newRef(v.pkg, v.filename, node, common.RefKindType, typeMatchText(node.Name.Name, exprKind(node.Type))),
+			Name: node.Name.Name,
+			Kind: exprKind(node.Type),
+			Node: node,
+		})
+
+	case *ast.FuncDecl:
+		receiver := ""
+		if node.Recv != nil && len(node.Recv.List) > 0 {
+			receiver = exprText(node.Recv.List[0].Type)
+		}
+		v.workspace.AddFunction(functions.Item{
+			Ref:      newRef(v.pkg, v.filename, node, common.RefKindFunction, functionMatchText(node.Name.Name, receiver)),
+			Name:     node.Name.Name,
+			Receiver: receiver,
+			Node:     node,
+		})
+		// Children of this FuncDecl are visited with a child visitor that
+		// records this declaration as the enclosing caller.
+		return &entryVisitor{
+			workspace: v.workspace,
+			pkg:       v.pkg,
+			filename:  v.filename,
+			file:      v.file,
+			enclosing: node,
+		}
+
+	case *ast.ValueSpec:
+		kind := "var"
+		if genDecl, ok := enclosingGenDecl(v.file, node); ok && genDecl.Tok == token.CONST {
+			kind = "const"
+		}
+		for _, name := range node.Names {
+			v.workspace.AddVariable(variables.Item{
+				Ref:  newRef(v.pkg, v.filename, name, common.RefKindVariable, variableMatchText(name.Name, kind)),
+				Name: name.Name,
+				Kind: kind,
+				Node: name,
 			})
 		}
 
-		return true
-	})
+	case *ast.CallExpr:
+		callerName := ""
+		callerReceiver := ""
+		if v.enclosing != nil {
+			callerName = v.enclosing.Name.Name
+			if v.enclosing.Recv != nil && len(v.enclosing.Recv.List) > 0 {
+				callerReceiver = exprText(v.enclosing.Recv.List[0].Type)
+			}
+		}
+		v.workspace.AddFunctionCall(functioncalls.Item{
+			Ref:            newRef(v.pkg, v.filename, node, common.RefKindFunctionCall, callMatchText(v.pkg.FileSet, node)),
+			Callee:         calleeName(node.Fun),
+			CallerName:     callerName,
+			CallerReceiver: callerReceiver,
+			Node:           node,
+		})
+	}
+
+	return v
 }
 
 func indexFileDependencies(
