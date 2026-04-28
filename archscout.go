@@ -507,11 +507,20 @@ func indexFileEntries(
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch node := n.(type) {
 		case *ast.TypeSpec:
+			fields, fieldEmbeds := extractStructFields(node, typesInfo)
+			methods, ifaceEmbeds := extractInterfaceMethods(pkg.ID, node, typesInfo)
+			embeds := fieldEmbeds
+			if len(ifaceEmbeds) > 0 {
+				embeds = ifaceEmbeds
+			}
 			workspace.AddType(types.Item{
-				Ref:  newRef(pkg, filename, node, common.RefKindType, typeMatchText(node.Name.Name, exprKind(node.Type))),
-				Name: node.Name.Name,
-				Kind: exprKind(node.Type),
-				Node: node,
+				Ref:     newRef(pkg, filename, node, common.RefKindType, typeMatchText(node.Name.Name, exprKind(node.Type))),
+				Name:    node.Name.Name,
+				Kind:    exprKind(node.Type),
+				Fields:  fields,
+				Methods: methods,
+				Embeds:  embeds,
+				Node:    node,
 			})
 
 		case *ast.FuncDecl:
@@ -823,4 +832,133 @@ func enclosingGenDecl(file *ast.File, target *ast.ValueSpec) (*ast.GenDecl, bool
 		}
 	}
 	return nil, false
+}
+
+// extractStructFields walks a TypeSpec for a struct type and returns the
+// declared fields plus the syntactic identifiers of any embedded fields.
+//
+// Returns nil slices for non-struct types.
+func extractStructFields(node *ast.TypeSpec, typesInfo *gotypes.Info) ([]types.FieldInfo, []string) {
+	st, ok := node.Type.(*ast.StructType)
+	if !ok || st.Fields == nil {
+		return nil, nil
+	}
+
+	var fields []types.FieldInfo
+	var embeds []string
+	for _, f := range st.Fields.List {
+		typeName := exprText(f.Type)
+		typeQName := resolveTypeQName(typesInfo, f.Type)
+		tag := unquoteTag(f.Tag)
+
+		if len(f.Names) == 0 {
+			// Embedded field — the type itself is the field name.
+			fields = append(fields, types.FieldInfo{
+				TypeName:  typeName,
+				TypeQName: typeQName,
+				Tag:       tag,
+				Embedded:  true,
+			})
+			if name := embedIdentifier(typeQName, typeName); name != "" {
+				embeds = append(embeds, name)
+			}
+			continue
+		}
+		for _, ident := range f.Names {
+			fields = append(fields, types.FieldInfo{
+				Name:      ident.Name,
+				TypeName:  typeName,
+				TypeQName: typeQName,
+				Tag:       tag,
+				Embedded:  false,
+			})
+		}
+	}
+	return fields, embeds
+}
+
+// extractInterfaceMethods walks a TypeSpec for an interface type and returns
+// the methods directly declared on it, plus the syntactic identifiers of any
+// embedded interfaces. Methods contributed by embedded interfaces are not
+// flattened into the methods list — callers should follow Embeds for that.
+//
+// Returns nil slices for non-interface types.
+func extractInterfaceMethods(pkgID string, node *ast.TypeSpec, typesInfo *gotypes.Info) ([]types.MethodInfo, []string) {
+	it, ok := node.Type.(*ast.InterfaceType)
+	if !ok || it.Methods == nil {
+		return nil, nil
+	}
+
+	ifaceName := node.Name.Name
+	var methods []types.MethodInfo
+	var embeds []string
+	for _, m := range it.Methods.List {
+		if len(m.Names) == 0 {
+			// Embedded interface — record its identifier.
+			typeName := exprText(m.Type)
+			typeQName := resolveTypeQName(typesInfo, m.Type)
+			if name := embedIdentifier(typeQName, typeName); name != "" {
+				embeds = append(embeds, name)
+			}
+			continue
+		}
+		for _, ident := range m.Names {
+			info := types.MethodInfo{Name: ident.Name}
+			if typesInfo != nil && pkgID != "" {
+				info.QName = pkgID + "." + ifaceName + "." + ident.Name
+			}
+			methods = append(methods, info)
+		}
+	}
+	return methods, embeds
+}
+
+// resolveTypeQName looks up the resolved fully-qualified name of an
+// expression's type. Returns an empty string when type info is unavailable
+// or when the expression's type is not a named type (e.g. a literal map,
+// channel, or function type).
+func resolveTypeQName(typesInfo *gotypes.Info, expr ast.Expr) string {
+	if typesInfo == nil {
+		return ""
+	}
+	t := typesInfo.TypeOf(expr)
+	if t == nil {
+		return ""
+	}
+	return namedTypeQName(t)
+}
+
+func namedTypeQName(t gotypes.Type) string {
+	switch v := t.(type) {
+	case *gotypes.Named:
+		obj := v.Obj()
+		if obj.Pkg() == nil {
+			return obj.Name()
+		}
+		return obj.Pkg().Path() + "." + obj.Name()
+	case *gotypes.Pointer:
+		return namedTypeQName(v.Elem())
+	}
+	return ""
+}
+
+// embedIdentifier prefers the fully-qualified type name when available,
+// falling back to the syntactic source text. Returns an empty string when
+// neither is informative (e.g. an embedded type literal, which is not legal
+// Go anyway).
+func embedIdentifier(qname, syntactic string) string {
+	if qname != "" {
+		return qname
+	}
+	return syntactic
+}
+
+func unquoteTag(lit *ast.BasicLit) string {
+	if lit == nil || lit.Value == "" {
+		return ""
+	}
+	if unquoted, err := strconv.Unquote(lit.Value); err == nil {
+		return unquoted
+	}
+	return lit.Value
 }

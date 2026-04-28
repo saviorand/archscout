@@ -267,7 +267,7 @@ archscout.Rule("ui/common must not depend on other internal packages").
 | --------------- | -------------- | ----------------------------------------------------------------------------------- |
 | `Packages`      | `Package`      | `ID`, `Name`, `Files`, `Dependencies()`                                             |
 | `Files`         | `File`         | `Filename`, `Dependencies()`                                                        |
-| `Types`         | `Type`         | `Name`, `Kind`                                                                      |
+| `Types`         | `Type`         | `Name`, `Kind`, `Fields`, `Methods`, `Embeds`                                       |
 | `Functions`     | `Function`     | `Name`, `Receiver`                                                                  |
 | `Variables`     | `Variable`     | `Name`, `Kind`                                                                      |
 | `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`                          |
@@ -392,6 +392,52 @@ importers := graph.Importers(mod.Pkg("domain/..."))
 | `Importers(patterns...)`                        | Packages that directly import any package matching patterns        |
 
 All methods support the `/...` glob convention.
+
+### 9. Inspect type structure
+
+`Type` items expose the inner shape of structs and interfaces:
+
+```go
+import "github.com/saintedlama/archscout"
+
+ws, err := archscout.LoadWorkspace(ctx, ".", archscout.WithTypeInfo())
+
+// Find every struct that embeds inner.Base.
+for _, t := range ws.Types.All() {
+  for _, embed := range t.Embeds {
+    if embed == "example.com/your-project/inner.Base" {
+      fmt.Println(t.Name, "embeds inner.Base")
+    }
+  }
+}
+
+// Find every interface with at least three directly declared methods.
+for _, t := range ws.Types.All() {
+  if t.Kind == "interface" && len(t.Methods) >= 3 {
+    fmt.Println(t.Name)
+  }
+}
+```
+
+`Fields` is the declared struct fields, including embedded entries
+(`Embedded == true`, `Name == ""`). Multi-name fields like
+`Age, Year int` fan out to one `FieldInfo` per name. Tags are returned
+without the surrounding backticks. With `WithTypeInfo()`, `TypeQName`
+resolves cross-package field types; without it, only the syntactic
+`TypeName` is populated.
+
+`Methods` lists only the methods declared *directly* on an interface.
+Methods contributed by embedded interfaces are not flattened in — follow
+`Embeds` for those.
+
+`Embeds` is a flat list of embedded type identifiers — fully qualified when
+`WithTypeInfo()` is enabled, syntactic source text otherwise. It exists for
+both struct embeds and embedded interfaces, so the question "what does this
+type compose with?" is one slice access regardless of kind.
+
+Concrete-type methods (those declared via `func (T) ...`) live in the
+`Functions` collection with a non-empty `Receiver`; they are intentionally
+not duplicated under `Type.Methods`.
 
 ## Refs and Formatting
 

@@ -148,6 +148,29 @@ func TestSaveAndLoadWorkspaceFromDisk_PreservesRefs(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadWorkspaceFromDisk_PreservesTypeStructure(t *testing.T) {
+	dir := filepath.Join(filepath.Dir(fixtureModDir(t)), "typestructfixture")
+	ws, err := LoadWorkspace(context.Background(), dir, WithTypeInfo())
+	require.NoError(t, err)
+
+	cachePath := filepath.Join(t.TempDir(), "workspace.gob")
+	require.NoError(t, saveWorkspaceToDisk(ws, cachePath))
+
+	loaded, err := loadWorkspaceFromDisk(cachePath)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	origTypes := ws.Types.All()
+	cachedTypes := loaded.Types.All()
+	require.Equal(t, len(origTypes), len(cachedTypes))
+	for i := range origTypes {
+		assert.Equal(t, origTypes[i].Name, cachedTypes[i].Name, "Name mismatch at %d", i)
+		assert.Equal(t, origTypes[i].Fields, cachedTypes[i].Fields, "Fields mismatch at %d (%s)", i, origTypes[i].Name)
+		assert.Equal(t, origTypes[i].Methods, cachedTypes[i].Methods, "Methods mismatch at %d (%s)", i, origTypes[i].Name)
+		assert.Equal(t, origTypes[i].Embeds, cachedTypes[i].Embeds, "Embeds mismatch at %d (%s)", i, origTypes[i].Name)
+	}
+}
+
 func TestSaveAndLoadWorkspaceFromDisk_PreservesResolvedCallees(t *testing.T) {
 	// Load with WithTypeInfo so resolved callee fields are populated.
 	dir := filepath.Join(filepath.Dir(fixtureModDir(t)), "typeinfofixture")

@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 2
+const cacheVersion = 3
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
@@ -63,9 +63,25 @@ type fileSnap struct {
 }
 
 type typeSnap struct {
-	Ref  common.Ref
-	Name string
-	Kind string
+	Ref     common.Ref
+	Name    string
+	Kind    string
+	Fields  []fieldSnap
+	Methods []methodSnap
+	Embeds  []string
+}
+
+type fieldSnap struct {
+	Name      string
+	TypeName  string
+	TypeQName string
+	Tag       string
+	Embedded  bool
+}
+
+type methodSnap struct {
+	Name  string
+	QName string
 }
 
 type functionSnap struct {
@@ -281,7 +297,20 @@ func buildSnap(ws *Workspace) workspaceSnap {
 	}
 
 	for _, t := range ws.Types.All() {
-		snap.Types = append(snap.Types, typeSnap{Ref: t.Ref, Name: t.Name, Kind: t.Kind})
+		ts := typeSnap{Ref: t.Ref, Name: t.Name, Kind: t.Kind, Embeds: append([]string(nil), t.Embeds...)}
+		for _, f := range t.Fields {
+			ts.Fields = append(ts.Fields, fieldSnap{
+				Name:      f.Name,
+				TypeName:  f.TypeName,
+				TypeQName: f.TypeQName,
+				Tag:       f.Tag,
+				Embedded:  f.Embedded,
+			})
+		}
+		for _, m := range t.Methods {
+			ts.Methods = append(ts.Methods, methodSnap{Name: m.Name, QName: m.QName})
+		}
+		snap.Types = append(snap.Types, ts)
 	}
 
 	for _, fn := range ws.Functions.All() {
@@ -341,7 +370,25 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 	}
 
 	for _, ts := range snap.Types {
-		wb.AddType(types.Item{Ref: ts.Ref, Name: ts.Name, Kind: ts.Kind})
+		item := types.Item{
+			Ref:    ts.Ref,
+			Name:   ts.Name,
+			Kind:   ts.Kind,
+			Embeds: append([]string(nil), ts.Embeds...),
+		}
+		for _, f := range ts.Fields {
+			item.Fields = append(item.Fields, types.FieldInfo{
+				Name:      f.Name,
+				TypeName:  f.TypeName,
+				TypeQName: f.TypeQName,
+				Tag:       f.Tag,
+				Embedded:  f.Embedded,
+			})
+		}
+		for _, m := range ts.Methods {
+			item.Methods = append(item.Methods, types.MethodInfo{Name: m.Name, QName: m.QName})
+		}
+		wb.AddType(item)
 	}
 
 	for _, fs := range snap.Functions {
