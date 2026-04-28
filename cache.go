@@ -102,6 +102,8 @@ type functionCallSnap struct {
 	CalleePackage  string
 	CalleeQName    string
 	CalleeIsMethod bool
+	CallerName     string
+	CallerReceiver string
 }
 
 type dependencySnap struct {
@@ -328,6 +330,8 @@ func buildSnap(ws *Workspace) workspaceSnap {
 			CalleePackage:  fc.CalleePackage,
 			CalleeQName:    fc.CalleeQName,
 			CalleeIsMethod: fc.CalleeIsMethod,
+			CallerName:     fc.CallerName,
+			CallerReceiver: fc.CallerReceiver,
 		})
 	}
 
@@ -406,6 +410,8 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 			CalleePackage:  fcs.CalleePackage,
 			CalleeQName:    fcs.CalleeQName,
 			CalleeIsMethod: fcs.CalleeIsMethod,
+			CallerName:     fcs.CallerName,
+			CallerReceiver: fcs.CallerReceiver,
 		})
 	}
 

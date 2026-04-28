@@ -110,6 +110,23 @@ refs := workspace.FunctionCalls.
   })
 ```
 
+Each `FunctionCall` also carries the function declaration that lexically
+encloses the call site. This is useful for asking who, exactly, is calling
+something:
+
+```go
+// Every method on *Service that calls fmt.Errorf.
+refs := workspace.FunctionCalls.Match(func(call archscout.FunctionCall) bool {
+  return call.Callee == "fmt.Errorf" &&
+    call.CallerReceiver == "*Service"
+})
+```
+
+`CallerName` and `CallerReceiver` are empty for calls that appear at package
+level (for example, inside a `var x = foo()` initializer). For methods,
+`CallerReceiver` mirrors the raw receiver text from `Function.Receiver`
+(e.g. `"*Service"` for a pointer receiver, `"Service"` for a value receiver).
+
 The default `Callee` field is the syntactic callee text from source — it's
 useful for grep-style matches but treats `cspl.Sign` and `c.Sign` (a method
 on a type aliased `cspl`) as different callees. For cross-package edges,
@@ -270,7 +287,7 @@ archscout.Rule("ui/common must not depend on other internal packages").
 | `Types`         | `Type`         | `Name`, `Kind`, `Fields`, `Methods`, `Embeds`                                       |
 | `Functions`     | `Function`     | `Name`, `Receiver`                                                                  |
 | `Variables`     | `Variable`     | `Name`, `Kind`                                                                      |
-| `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`                          |
+| `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`, `CallerName`, `CallerReceiver` |
 | `Dependencies`  | `Dependency`   | `ImportPath`, `WithinWorkspace`, `External`, `StandardLibrary`, `TargetPackageName` |
 
 All collections support:

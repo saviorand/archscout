@@ -172,7 +172,8 @@ func TestSaveAndLoadWorkspaceFromDisk_PreservesTypeStructure(t *testing.T) {
 }
 
 func TestSaveAndLoadWorkspaceFromDisk_PreservesResolvedCallees(t *testing.T) {
-	// Load with WithTypeInfo so resolved callee fields are populated.
+	// Load with WithTypeInfo so resolved callee fields are populated; this
+	// also exercises the caller-identity fields in the same roundtrip.
 	dir := filepath.Join(filepath.Dir(fixtureModDir(t)), "typeinfofixture")
 	ws, err := LoadWorkspace(context.Background(), dir, WithTypeInfo())
 	require.NoError(t, err)
@@ -192,6 +193,33 @@ func TestSaveAndLoadWorkspaceFromDisk_PreservesResolvedCallees(t *testing.T) {
 		assert.Equal(t, origCalls[i].CalleePackage, cachedCalls[i].CalleePackage, "CalleePackage mismatch at index %d", i)
 		assert.Equal(t, origCalls[i].CalleeQName, cachedCalls[i].CalleeQName, "CalleeQName mismatch at index %d", i)
 		assert.Equal(t, origCalls[i].CalleeIsMethod, cachedCalls[i].CalleeIsMethod, "CalleeIsMethod mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerName, cachedCalls[i].CallerName, "CallerName mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerReceiver, cachedCalls[i].CallerReceiver, "CallerReceiver mismatch at index %d", i)
+	}
+}
+
+func TestSaveAndLoadWorkspaceFromDisk_PreservesCallerIdentity(t *testing.T) {
+	// Default load (no WithTypeInfo) — exercises caller identity in isolation
+	// from callee resolution, on the simpler fixturemod corpus.
+	dir := fixtureModDir(t)
+	ws, err := LoadWorkspace(context.Background(), dir)
+	require.NoError(t, err)
+
+	cachePath := filepath.Join(t.TempDir(), "workspace.gob")
+	require.NoError(t, saveWorkspaceToDisk(ws, cachePath))
+
+	loaded, err := loadWorkspaceFromDisk(cachePath)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	origCalls := ws.FunctionCalls.All()
+	cachedCalls := loaded.FunctionCalls.All()
+	require.Equal(t, len(origCalls), len(cachedCalls))
+	for i := range origCalls {
+		assert.Equal(t, origCalls[i].Callee, cachedCalls[i].Callee, "Callee mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerName, cachedCalls[i].CallerName, "CallerName mismatch at index %d", i)
+		assert.Equal(t, origCalls[i].CallerReceiver, cachedCalls[i].CallerReceiver, "CallerReceiver mismatch at index %d", i)
+		assert.Nil(t, cachedCalls[i].Node, "Node should be nil after cache load")
 	}
 }
 

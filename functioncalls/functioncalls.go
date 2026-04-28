@@ -18,12 +18,20 @@ import (
 // "<importpath>.<TypeName>.<MethodName>" with any pointer indirection on the
 // receiver stripped. For plain functions it is "<importpath>.<FuncName>".
 // CalleePackage is empty for callees defined in the universe scope.
+//
+// CallerName and CallerReceiver identify the function declaration that
+// lexically encloses the call site. They are empty when the call appears
+// at package level (e.g. inside a var/const initializer). For a method,
+// CallerReceiver mirrors the raw receiver text from the function entry —
+// for example, "*SMAERS" or "SMAERS".
 type Item struct {
 	Ref            common.Ref
 	Callee         string
 	CalleePackage  string
 	CalleeQName    string
 	CalleeIsMethod bool
+	CallerName     string
+	CallerReceiver string
 	Node           *ast.CallExpr
 }
 
