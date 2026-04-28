@@ -39,15 +39,12 @@ func TestBuild_PatternFilterScopesByPackage(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture", archscout.WithTypeInfo())
 	graph := archscout.BuildImplementsGraph(ws)
 
-	// Restrict implementers to the api package — neither greeter lives there,
-	// so the result is empty.
 	got := graph.Implementers(
 		"example.com/typeinfofixture/api.Greeter",
 		"example.com/typeinfofixture/api/...",
 	)
 	assert.Empty(t, got)
 
-	// Restrict to the main package — both implementers are there.
 	got = graph.Implementers(
 		"example.com/typeinfofixture/api.Greeter",
 		"example.com/typeinfofixture",
@@ -66,15 +63,12 @@ func TestBuild_SkipsEmptyInterfaces(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture", archscout.WithTypeInfo())
 	graph := archscout.BuildImplementsGraph(ws)
 
-	// "any" / interface{} would otherwise list every concrete type ever —
-	// returning an empty result for those queries is the more useful answer.
 	got := graph.Implementers("any")
 	assert.Empty(t, got, "empty interfaces are intentionally not indexed")
 }
 
 func TestBuild_ReturnsEmptyGraphWithoutTypeInfo(t *testing.T) {
-	// Without WithTypeInfo, ws.TypedPackages() is nil and BuildImplementsGraph
-	// returns an empty (but safe) graph.
+	// Without WithTypeInfo, ws.TypedPackages() is nil and BuildImplementsGraph returns an empty graph.
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture")
 	require.Nil(t, ws.TypedPackages())
 

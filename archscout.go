@@ -38,7 +38,7 @@ type Workspace struct {
 	Variables     variables.Collection
 	FunctionCalls functioncalls.Collection
 	Dependencies  dependencies.Collection
-
+	// TODO: this feels awkward here, should we move someplace else or rename?
 	// typed holds resolved go/types packages for every workspace-internal
 	// package. Populated only when LoadWorkspace was called with
 	// WithTypeInfo(); nil otherwise (and after a disk-cache hit, since type
@@ -50,7 +50,6 @@ type Workspace struct {
 // TypedPackages returns the slice of resolved go/types packages indexed by
 // the workspace. Returns nil when the workspace was loaded without
 // WithTypeInfo() or restored from a disk cache.
-//
 // The slice is shared with the workspace; callers must not mutate it.
 func (ws *Workspace) TypedPackages() []*gotypes.Package {
 	if ws == nil {
@@ -106,8 +105,7 @@ func BuildPackageGraph(c dependencies.Collection) *PackageGraph {
 	return packagegraph.BuildGraph(c)
 }
 
-// ImplementsGraph stores interface-implementation edges over the workspace's
-// resolved go/types packages. See implementsgraph.Graph for the full API.
+// ImplementsGraph stores interface-implementation edges over the workspace's resolved go/types packages.
 type ImplementsGraph = implementsgraph.Graph
 
 // BuildImplementsGraph constructs an ImplementsGraph from the workspace's

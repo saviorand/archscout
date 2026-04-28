@@ -128,8 +128,8 @@ level (for example, inside a `var x = foo()` initializer). For methods,
 (e.g. `"*Service"` for a pointer receiver, `"Service"` for a value receiver).
 
 The default `Callee` field is the syntactic callee text from source — it's
-useful for grep-style matches but treats `cspl.Sign` and `c.Sign` (a method
-on a type aliased `cspl`) as different callees. For cross-package edges,
+useful for grep-style matches but treats `crypto.Sign` and `c.Sign` (a method
+on a type aliased `crypto`) as different callees. For cross-package edges,
 load with `WithTypeInfo()` to get fully-qualified resolution:
 
 ```go

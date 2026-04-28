@@ -49,7 +49,6 @@ func TestTypeFields_StructFieldsAndEmbeds(t *testing.T) {
 	assert.Equal(t, "Email", email.Name)
 	assert.Equal(t, `json:"email,omitempty"`, email.Tag)
 
-	// Multi-name fields fan out to one entry per name, sharing type and tag.
 	age := user.Fields[3]
 	year := user.Fields[4]
 	assert.Equal(t, "Age", age.Name)
@@ -57,7 +56,6 @@ func TestTypeFields_StructFieldsAndEmbeds(t *testing.T) {
 	assert.Equal(t, "int", age.TypeName)
 	assert.Equal(t, "int", year.TypeName)
 
-	// Embeds is the convenience flat list of embedded type identifiers.
 	assert.Equal(t,
 		[]string{"example.com/typestructfixture/inner.Base"},
 		user.Embeds,
@@ -69,8 +67,7 @@ func TestTypeMethods_InterfaceMethodsAndEmbeds(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typestructfixture", archscout.WithTypeInfo())
 	svc := findType(t, ws, "Service")
 
-	// Methods lists only directly declared methods, not those inherited from
-	// embedded interfaces.
+	// Methods lists only directly declared methods.
 	require.Len(t, svc.Methods, 2)
 	assert.Equal(t, "Run", svc.Methods[0].Name)
 	assert.Equal(t, "Stop", svc.Methods[1].Name)
@@ -85,7 +82,6 @@ func TestTypeMethods_InterfaceMethodsAndEmbeds(t *testing.T) {
 		svc.Methods[1].QName,
 	)
 
-	// Embeds reports both stdlib and workspace embeds, fully qualified.
 	assert.Contains(t, svc.Embeds, "io.Reader")
 	assert.Contains(t, svc.Embeds, "example.com/typestructfixture/inner.Pinger")
 }

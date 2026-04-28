@@ -1,7 +1,5 @@
 package inner
 
-// Base is embedded into types in the parent package; resolving its qname
-// requires WithTypeInfo so the cross-package reference works.
 type Base struct {
 	ID int
 }

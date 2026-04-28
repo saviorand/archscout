@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 3
+const cacheVersion = 2
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
@@ -126,9 +126,6 @@ func defaultCacheDir() string {
 
 // loadWithDiskCache checks the disk cache before delegating to parseWorkspace.
 // When diskCacheDir is empty the function behaves identically to parseWorkspace.
-//
-// withTypeInfo participates in the cache fingerprint so that type-info loads
-// and default loads of the same project never share cache files.
 func loadWithDiskCache(ctx context.Context, dir string, diskCacheDir string, withTypeInfo bool, report func(string)) (*Workspace, error) {
 	if diskCacheDir == "" {
 		return parseWorkspace(ctx, dir, withTypeInfo, report)

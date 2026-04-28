@@ -72,7 +72,7 @@ func TestFunctionCalls_CallerIdentity_ResolvedForFunctionsAndMethods(t *testing.
 		receiver string
 	}
 
-	got := map[string]sighting{} // keyed by Callee
+	got := map[string]sighting{}
 	for _, item := range workspace.FunctionCalls.All() {
 		got[item.Callee] = sighting{
 			caller:   item.CallerName,
@@ -83,8 +83,7 @@ func TestFunctionCalls_CallerIdentity_ResolvedForFunctionsAndMethods(t *testing.
 	// fmt.Errorf in subpkg/sub.go is called from func SubErr (no receiver).
 	// fmt.Errorf in application/service.go is called from method (s *OrderService) PlaceOrder.
 	// fmt.Errorf in infrastructure/repo.go is called from method (r *OrderRepository) Find.
-	// We don't know which Callee the map kept (last wins), so just assert the
-	// caller information is present for any of them.
+	// We don't know which Callee the map kept (last wins), assert the caller information is present for any of them.
 	for callee, s := range got {
 		if callee != "fmt.Errorf" {
 			continue
@@ -92,8 +91,6 @@ func TestFunctionCalls_CallerIdentity_ResolvedForFunctionsAndMethods(t *testing.
 		assert.NotEmpty(t, s.caller, "fmt.Errorf call should have a non-empty CallerName")
 	}
 
-	// Direct sweep over all entries: every domain.NewOrder call lives inside
-	// the OrderService.PlaceOrder method.
 	var sawPlaceOrderCaller bool
 	for _, item := range workspace.FunctionCalls.All() {
 		if item.Callee != "domain.NewOrder" {
@@ -105,7 +102,6 @@ func TestFunctionCalls_CallerIdentity_ResolvedForFunctionsAndMethods(t *testing.
 	}
 	assert.True(t, sawPlaceOrderCaller, "expected to see at least one domain.NewOrder call")
 
-	// repo.Save is called from main (a top-level FuncDecl with no receiver).
 	var sawMainCall bool
 	for _, item := range workspace.FunctionCalls.All() {
 		if item.Callee != "repo.Save" {
@@ -121,15 +117,12 @@ func TestFunctionCalls_CallerIdentity_ResolvedForFunctionsAndMethods(t *testing.
 func TestFunctionCalls_CallerIdentity_EmptyForPackageLevelInitializers(t *testing.T) {
 	workspace := internaltest.LoadFixtureWorkspace(t, "callerfixture")
 
-	// errors.New in `var ErrSentinel = errors.New(...)` is at package level —
-	// no enclosing FuncDecl, so caller fields must be empty.
+	// errors.New in `var ErrSentinel = errors.New(...)` is at package level
 	var sawSentinel bool
 	for _, item := range workspace.FunctionCalls.All() {
 		if item.Callee != "errors.New" {
 			continue
 		}
-		// The fixture's other errors.New calls are inside Validate; only the
-		// package-level initializer has no caller.
 		if item.CallerName == "" {
 			sawSentinel = true
 			assert.Empty(t, item.CallerReceiver)
@@ -141,8 +134,6 @@ func TestFunctionCalls_CallerIdentity_EmptyForPackageLevelInitializers(t *testin
 func TestFunctionCalls_CallerIdentity_PreservedAcrossClosures(t *testing.T) {
 	workspace := internaltest.LoadFixtureWorkspace(t, "callerfixture")
 
-	// strings.ToUpper is called inside a closure inside Validate. The
-	// enclosing FuncDecl is still Validate.
 	var sawClosureCall bool
 	for _, item := range workspace.FunctionCalls.All() {
 		if item.Callee != "strings.ToUpper" {

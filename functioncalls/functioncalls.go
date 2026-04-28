@@ -8,7 +8,7 @@ import (
 
 // Item represents a function call entry.
 //
-// Callee is the syntactic callee text taken straight from the source
+// Callee is the syntactic callee text taken from the source
 // (e.g. "fmt.Errorf", "c.Sign"). It is always populated.
 //
 // CalleePackage, CalleeQName and CalleeIsMethod are populated only when the
@@ -23,7 +23,7 @@ import (
 // lexically encloses the call site. They are empty when the call appears
 // at package level (e.g. inside a var/const initializer). For a method,
 // CallerReceiver mirrors the raw receiver text from the function entry —
-// for example, "*SMAERS" or "SMAERS".
+// for example, "*System" or "System".
 type Item struct {
 	Ref            common.Ref
 	Callee         string

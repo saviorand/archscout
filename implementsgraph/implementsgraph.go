@@ -1,8 +1,3 @@
-// Package implementsgraph derives a Go interface-implementation graph from
-// resolved go/types packages and answers questions like "who implements this
-// interface?" or "which interfaces does this type satisfy?".
-//
-// Construct via Build, not directly.
 package implementsgraph
 
 import (
@@ -13,22 +8,13 @@ import (
 )
 
 // Graph stores interface-implementation edges over a fixed set of go/types
-// packages.
-//
-// Edges are computed once at Build time. Implementers and Interfaces never
-// re-walk the type system.
+// packages. Edges are computed once at Build time.
 type Graph struct {
-	// implementers maps interface qname → sorted, deduplicated implementer
-	// records.
 	implementers map[string][]implementer
-	// interfaces maps concrete-type qname → sorted, deduplicated interface
-	// qnames satisfied by that type.
-	interfaces map[string][]string
+	interfaces   map[string][]string
 }
 
 // implementer pairs a concrete type's qname with its defining package path.
-// The package path is what InPackage filters match against; the qname is
-// what callers see.
 type implementer struct {
 	qname       string
 	packagePath string
@@ -36,10 +22,7 @@ type implementer struct {
 
 // Build constructs an interface-implementation graph from the supplied
 // go/types packages. Workspaces loaded without archscout.WithTypeInfo() pass
-// nil here; the resulting graph is empty but safe to query.
-//
-// Empty interfaces (interface{} / any) are skipped — every concrete type
-// trivially implements them, which is rarely a useful answer.
+// nil here; the resulting graph is empty. Empty interfaces (interface{} / any) are skipped.
 func Build(pkgs []*gotypes.Package) *Graph {
 	g := &Graph{
 		implementers: make(map[string][]implementer),
@@ -151,9 +134,7 @@ func (g *Graph) Interfaces(typeQName string) []string {
 }
 
 // typeImplements reports whether the named type satisfies the interface
-// either directly (value-receiver method set) or via its pointer type
-// (pointer-receiver methods are part of the pointer's method set, which is
-// what most architectural questions actually care about).
+// either directly (value-receiver method set) or via its pointer type.
 func typeImplements(t *gotypes.Named, iface *gotypes.Interface) bool {
 	if gotypes.Implements(t, iface) {
 		return true

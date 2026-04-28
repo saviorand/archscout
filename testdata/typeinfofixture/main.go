@@ -7,10 +7,6 @@ import (
 	"example.com/typeinfofixture/api"
 )
 
-// defaultGreeter implements api.Greeter via a value receiver. A second
-// implementer (PointerGreeter, declared in pointer_greeter.go) implements
-// the same interface via pointer receivers — together they exercise both
-// method-set rules for the implements graph.
 type defaultGreeter struct{}
 
 func (defaultGreeter) Greet(name string) string {

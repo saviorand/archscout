@@ -58,9 +58,6 @@ func TestWithTypeInfo_ResolvesValueReceiverMethod(t *testing.T) {
 func TestWithTypeInfo_ResolvesInterfaceMethodDispatch(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture", archscout.WithTypeInfo())
 
-	// Interface dispatch resolves to the interface method, not the concrete
-	// implementation. That's the right call: type info alone cannot know the
-	// dynamic type at runtime.
 	call := findCallByCallee(t, ws, "g.Greet")
 	assert.True(t, call.CalleeIsMethod)
 	assert.Equal(t, "example.com/typeinfofixture/api", call.CalleePackage)
@@ -70,8 +67,6 @@ func TestWithTypeInfo_ResolvesInterfaceMethodDispatch(t *testing.T) {
 func TestWithTypeInfo_LeavesBuiltinsUnresolved(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture", archscout.WithTypeInfo())
 
-	// Builtins are *types.Builtin, not *types.Func — by design we do not try
-	// to resolve them. The syntactic Callee is still populated.
 	call := findCallByCallee(t, ws, "len")
 	assert.Empty(t, call.CalleeQName, "builtins should not resolve")
 	assert.Empty(t, call.CalleePackage)
@@ -79,8 +74,6 @@ func TestWithTypeInfo_LeavesBuiltinsUnresolved(t *testing.T) {
 }
 
 func TestWithoutTypeInfo_LeavesResolvedFieldsEmpty(t *testing.T) {
-	// When loaded WITHOUT WithTypeInfo, no callee resolution happens — the
-	// syntactic Callee is the only thing populated.
 	ws := internaltest.LoadFixtureWorkspace(t, "typeinfofixture")
 
 	require.Greater(t, ws.FunctionCalls.Len(), 0)
