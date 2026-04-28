@@ -110,6 +110,37 @@ refs := workspace.FunctionCalls.
   })
 ```
 
+The default `Callee` field is the syntactic callee text from source — it's
+useful for grep-style matches but treats `cspl.Sign` and `c.Sign` (a method
+on a type aliased `cspl`) as different callees. For cross-package edges,
+load with `WithTypeInfo()` to get fully-qualified resolution:
+
+```go
+ws, err := archscout.LoadWorkspace(ctx, ".", archscout.WithTypeInfo())
+
+// Every call into the strings package, regardless of how it was written.
+refs := ws.FunctionCalls.Match(func(call archscout.FunctionCall) bool {
+  return call.CalleePackage == "strings"
+})
+
+// All method calls on api.Service.
+refs = ws.FunctionCalls.Match(func(call archscout.FunctionCall) bool {
+  return call.CalleeIsMethod &&
+    call.CalleeQName == "example.com/your-project/api.Service.Run"
+})
+```
+
+`CalleeQName` has the form `<importpath>.<TypeName>.<MethodName>` for methods
+(pointer indirection on the receiver is stripped) and `<importpath>.<FuncName>`
+for plain functions. For interface dispatch, the qname resolves to the
+interface's defining method — type information alone cannot know the dynamic
+implementer at runtime.
+
+`WithTypeInfo()` is opt-in because loading full Go type information is
+substantially slower and uses more memory than the default mode. The disk
+cache fingerprints type-info loads separately, so toggling the option will
+not return stale, partially-populated workspaces.
+
 ### 2. Validate architecture with reusable rules
 
 ```go
@@ -239,7 +270,7 @@ archscout.Rule("ui/common must not depend on other internal packages").
 | `Types`         | `Type`         | `Name`, `Kind`                                                                      |
 | `Functions`     | `Function`     | `Name`, `Receiver`                                                                  |
 | `Variables`     | `Variable`     | `Name`, `Kind`                                                                      |
-| `FunctionCalls` | `FunctionCall` | `Callee`                                                                            |
+| `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`                          |
 | `Dependencies`  | `Dependency`   | `ImportPath`, `WithinWorkspace`, `External`, `StandardLibrary`, `TargetPackageName` |
 
 All collections support:
@@ -395,6 +426,7 @@ Available format options: `WithRefPackage()`, `WithRefKind()`, `WithoutRefFile()
 - `WithInMemoryCache() LoadWorkspaceOption` — reuse a loaded workspace within the process
 - `WithDiskCache() LoadWorkspaceOption` — persist a workspace snapshot in the platform-default cache directory
 - `WithDiskCacheDir(dir string) LoadWorkspaceOption` — persist a workspace snapshot in an explicit directory
+- `WithTypeInfo() LoadWorkspaceOption` — load full Go type information so `FunctionCall.CalleePackage`, `CalleeQName` and `CalleeIsMethod` are populated
 - `Module(path)` — helper for building fully-qualified package patterns
 - `BuildPackageGraph(c dependencies.Collection) *PackageGraph` — builds a transitive package graph from a dependency collection
 - `Rule(name)` — entry point for all rule construction

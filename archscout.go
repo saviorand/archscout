@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/printer"
 	"go/token"
+	gotypes "go/types"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -202,6 +203,7 @@ type loadWorkspaceOptions struct {
 	inMemoryCache bool
 	diskCache     bool   // true when WithDiskCache() (auto dir) is used
 	diskCacheDir  string // explicit dir from WithDiskCacheDir
+	typeInfo      bool   // true when WithTypeInfo() is used
 }
 
 type workspaceCacheState struct {
@@ -264,6 +266,32 @@ func WithDiskCacheDir(dir string) LoadWorkspaceOption {
 	}
 }
 
+// WithTypeInfo enables loading of full Go type information by extending the
+// underlying go/packages load mode with NeedTypes and NeedTypesInfo. When
+// enabled, the workspace populates resolved-callee fields on every
+// FunctionCall:
+//
+//   - CalleePackage — import path of the package that defines the callee
+//   - CalleeQName   — fully-qualified name (e.g. "example.com/pkg.Service.Run"
+//     for methods or "example.com/pkg.New" for functions)
+//   - CalleeIsMethod — true for method calls
+//
+// Without this option the same fields remain empty; only the syntactic
+// Callee string is available.
+//
+// Type-info loading is significantly more expensive than the default mode
+// (typically 2-3x slower and substantially more memory hungry on large
+// workspaces). Enable it only when the resolved data is needed.
+//
+// The disk cache fingerprints type-info loads separately from default loads,
+// so toggling this option will not return stale, partially-populated
+// workspaces.
+func WithTypeInfo() LoadWorkspaceOption {
+	return func(opts *loadWorkspaceOptions) {
+		opts.typeInfo = true
+	}
+}
+
 // LoadWorkspace loads all packages in dir and returns a workspace.
 func LoadWorkspace(ctx context.Context, dir string, opts ...LoadWorkspaceOption) (*Workspace, error) {
 	options := &loadWorkspaceOptions{}
@@ -305,7 +333,7 @@ func LoadWorkspace(ctx context.Context, dir string, opts ...LoadWorkspaceOption)
 		workspaceCache.entries[cacheKey] = entry
 		workspaceCache.mu.Unlock()
 
-		workspace, err := loadWithDiskCache(ctx, dir, effectiveCacheDir, report)
+		workspace, err := loadWithDiskCache(ctx, dir, effectiveCacheDir, options.typeInfo, report)
 		if err != nil {
 			workspaceCache.mu.Lock()
 			delete(workspaceCache.entries, cacheKey)
@@ -322,16 +350,21 @@ func LoadWorkspace(ctx context.Context, dir string, opts ...LoadWorkspaceOption)
 		return workspace, nil
 	}
 
-	return loadWithDiskCache(ctx, dir, effectiveCacheDir, report)
+	return loadWithDiskCache(ctx, dir, effectiveCacheDir, options.typeInfo, report)
 }
 
-func parseWorkspace(ctx context.Context, dir string, report func(string)) (*Workspace, error) {
+func parseWorkspace(ctx context.Context, dir string, withTypeInfo bool, report func(string)) (*Workspace, error) {
+	mode := toolspackages.NeedName | toolspackages.NeedFiles |
+		toolspackages.NeedSyntax |
+		toolspackages.NeedCompiledGoFiles |
+		toolspackages.NeedImports
+	if withTypeInfo {
+		mode |= toolspackages.NeedTypes | toolspackages.NeedTypesInfo
+	}
+
 	cfg := &toolspackages.Config{
-		Dir: dir,
-		Mode: toolspackages.NeedName | toolspackages.NeedFiles |
-			toolspackages.NeedSyntax |
-			toolspackages.NeedCompiledGoFiles |
-			toolspackages.NeedImports,
+		Dir:     dir,
+		Mode:    mode,
 		Context: ctx,
 	}
 
@@ -386,7 +419,7 @@ func parseWorkspace(ctx context.Context, dir string, report func(string)) (*Work
 
 			indexFileDependencies(workspace, p, filename, file, workspacePackageIDs)
 
-			indexFileEntries(workspace, p, filename, file)
+			indexFileEntries(workspace, p, filename, file, pkg.TypesInfo)
 		}
 
 		workspace.AddPackage(p)
@@ -465,6 +498,7 @@ func indexFileEntries(
 	pkg packages.Item,
 	filename string,
 	file *ast.File,
+	typesInfo *gotypes.Info,
 ) {
 	if file == nil {
 		return
@@ -507,15 +541,94 @@ func indexFileEntries(
 			}
 
 		case *ast.CallExpr:
+			calleePkg, calleeQName, isMethod := resolveCallee(typesInfo, node.Fun)
 			workspace.AddFunctionCall(functioncalls.Item{
-				Ref:    newRef(pkg, filename, node, common.RefKindFunctionCall, callMatchText(pkg.FileSet, node)),
-				Callee: calleeName(node.Fun),
-				Node:   node,
+				Ref:            newRef(pkg, filename, node, common.RefKindFunctionCall, callMatchText(pkg.FileSet, node)),
+				Callee:         calleeName(node.Fun),
+				CalleePackage:  calleePkg,
+				CalleeQName:    calleeQName,
+				CalleeIsMethod: isMethod,
+				Node:           node,
 			})
 		}
 
 		return true
 	})
+}
+
+// resolveCallee inspects type information to derive the import path and
+// fully-qualified name of a CallExpr's callee.
+//
+// Returns empty values when typesInfo is nil (i.e. the workspace was loaded
+// without WithTypeInfo), when the callee is not a Go function (e.g. type
+// conversions, builtins, calls through interface values that can't be
+// resolved), or when the resolution otherwise fails.
+//
+// For methods CalleeQName has the form "<importpath>.<TypeName>.<MethodName>"
+// with any pointer indirection on the receiver stripped. For plain functions
+// it is "<importpath>.<FuncName>". CalleePackage is the receiver type's
+// defining package for methods and the function's defining package for
+// plain functions; it is empty for callees in the universe scope.
+func resolveCallee(typesInfo *gotypes.Info, fun ast.Expr) (calleePkg, calleeQName string, isMethod bool) {
+	if typesInfo == nil {
+		return "", "", false
+	}
+
+	// Strip parentheses so e.g. (foo)() resolves the same as foo().
+	for {
+		paren, ok := fun.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		fun = paren.X
+	}
+
+	var obj gotypes.Object
+	switch e := fun.(type) {
+	case *ast.Ident:
+		obj = typesInfo.Uses[e]
+	case *ast.SelectorExpr:
+		// Method or field selection (receiver.method or receiver.field()).
+		if sel, ok := typesInfo.Selections[e]; ok {
+			obj = sel.Obj()
+			isMethod = sel.Kind() == gotypes.MethodVal || sel.Kind() == gotypes.MethodExpr
+		} else {
+			// Qualified identifier (pkg.Func).
+			obj = typesInfo.Uses[e.Sel]
+		}
+	default:
+		return "", "", false
+	}
+
+	fn, ok := obj.(*gotypes.Func)
+	if !ok || fn == nil {
+		return "", "", false
+	}
+
+	if sig, ok := fn.Type().(*gotypes.Signature); ok && sig.Recv() != nil {
+		isMethod = true
+		recvType := sig.Recv().Type()
+		if ptr, ok := recvType.(*gotypes.Pointer); ok {
+			recvType = ptr.Elem()
+		}
+		if named, ok := recvType.(*gotypes.Named); ok {
+			obj := named.Obj()
+			pkgPath := ""
+			if obj.Pkg() != nil {
+				pkgPath = obj.Pkg().Path()
+			}
+			qname := obj.Name() + "." + fn.Name()
+			if pkgPath != "" {
+				qname = pkgPath + "." + qname
+			}
+			return pkgPath, qname, true
+		}
+	}
+
+	if fn.Pkg() != nil {
+		return fn.Pkg().Path(), fn.Pkg().Path() + "." + fn.Name(), isMethod
+	}
+	return "", fn.Name(), isMethod
 }
 
 func indexFileDependencies(

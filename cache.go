@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 1
+const cacheVersion = 2
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
@@ -81,8 +81,11 @@ type variableSnap struct {
 }
 
 type functionCallSnap struct {
-	Ref    common.Ref
-	Callee string
+	Ref            common.Ref
+	Callee         string
+	CalleePackage  string
+	CalleeQName    string
+	CalleeIsMethod bool
 }
 
 type dependencySnap struct {
@@ -105,20 +108,23 @@ func defaultCacheDir() string {
 
 // loadWithDiskCache checks the disk cache before delegating to parseWorkspace.
 // When diskCacheDir is empty the function behaves identically to parseWorkspace.
-func loadWithDiskCache(ctx context.Context, dir string, diskCacheDir string, report func(string)) (*Workspace, error) {
+//
+// withTypeInfo participates in the cache fingerprint so that type-info loads
+// and default loads of the same project never share cache files.
+func loadWithDiskCache(ctx context.Context, dir string, diskCacheDir string, withTypeInfo bool, report func(string)) (*Workspace, error) {
 	if diskCacheDir == "" {
-		return parseWorkspace(ctx, dir, report)
+		return parseWorkspace(ctx, dir, withTypeInfo, report)
 	}
 
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return parseWorkspace(ctx, dir, report)
+		return parseWorkspace(ctx, dir, withTypeInfo, report)
 	}
 
-	fp, err := computeFingerprint(absDir)
+	fp, err := computeFingerprint(absDir, withTypeInfo)
 	if err != nil {
 		report(fmt.Sprintf("Warning: cache fingerprint failed (%v), falling back to full parse", err))
-		return parseWorkspace(ctx, dir, report)
+		return parseWorkspace(ctx, dir, withTypeInfo, report)
 	}
 
 	cachePath := filepath.Join(diskCacheDir, fp+".gob")
@@ -128,7 +134,7 @@ func loadWithDiskCache(ctx context.Context, dir string, diskCacheDir string, rep
 		return ws, nil
 	}
 
-	ws, err := parseWorkspace(ctx, dir, report)
+	ws, err := parseWorkspace(ctx, dir, withTypeInfo, report)
 	if err != nil {
 		return nil, err
 	}
@@ -142,10 +148,12 @@ func loadWithDiskCache(ctx context.Context, dir string, diskCacheDir string, rep
 
 // computeFingerprint returns a SHA256 hex string derived from:
 //   - the absolute project directory (so two projects in the same cache dir never collide),
+//   - whether type info loading is enabled (so default and type-info loads
+//     never share cache files),
 //   - the relative path, modification time and size of every .go source file and go.sum under dir.
 //
 // The vendor directory and hidden directories (name starting with '.') are skipped.
-func computeFingerprint(dir string) (string, error) {
+func computeFingerprint(dir string, withTypeInfo bool) (string, error) {
 	type entry struct {
 		path  string
 		mtime int64
@@ -188,6 +196,9 @@ func computeFingerprint(dir string) (string, error) {
 	h := sha256.New()
 	// Include the project dir so two different projects never produce the same fingerprint.
 	fmt.Fprintf(h, "dir:%s\n", dir)
+	// Partition cache files by load mode: a workspace built without type info
+	// must not be returned to a caller that asked for it (and vice versa).
+	fmt.Fprintf(h, "typeinfo:%t\n", withTypeInfo)
 	for _, e := range entries {
 		fmt.Fprintf(h, "%s\t%d\t%d\n", e.path, e.mtime, e.size)
 	}
@@ -282,7 +293,13 @@ func buildSnap(ws *Workspace) workspaceSnap {
 	}
 
 	for _, fc := range ws.FunctionCalls.All() {
-		snap.FunctionCalls = append(snap.FunctionCalls, functionCallSnap{Ref: fc.Ref, Callee: fc.Callee})
+		snap.FunctionCalls = append(snap.FunctionCalls, functionCallSnap{
+			Ref:            fc.Ref,
+			Callee:         fc.Callee,
+			CalleePackage:  fc.CalleePackage,
+			CalleeQName:    fc.CalleeQName,
+			CalleeIsMethod: fc.CalleeIsMethod,
+		})
 	}
 
 	for _, d := range ws.Dependencies.All() {
@@ -336,7 +353,13 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 	}
 
 	for _, fcs := range snap.FunctionCalls {
-		wb.AddFunctionCall(functioncalls.Item{Ref: fcs.Ref, Callee: fcs.Callee})
+		wb.AddFunctionCall(functioncalls.Item{
+			Ref:            fcs.Ref,
+			Callee:         fcs.Callee,
+			CalleePackage:  fcs.CalleePackage,
+			CalleeQName:    fcs.CalleeQName,
+			CalleeIsMethod: fcs.CalleeIsMethod,
+		})
 	}
 
 	for _, ds := range snap.Dependencies {

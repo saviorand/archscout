@@ -7,10 +7,24 @@ import (
 )
 
 // Item represents a function call entry.
+//
+// Callee is the syntactic callee text taken straight from the source
+// (e.g. "fmt.Errorf", "c.Sign"). It is always populated.
+//
+// CalleePackage, CalleeQName and CalleeIsMethod are populated only when the
+// workspace was loaded with archscout.WithTypeInfo(). They carry the resolved
+// import path of the defining package and the fully-qualified name of the
+// callee. For methods, CalleeQName has the form
+// "<importpath>.<TypeName>.<MethodName>" with any pointer indirection on the
+// receiver stripped. For plain functions it is "<importpath>.<FuncName>".
+// CalleePackage is empty for callees defined in the universe scope.
 type Item struct {
-	Ref    common.Ref
-	Callee string
-	Node   *ast.CallExpr
+	Ref            common.Ref
+	Callee         string
+	CalleePackage  string
+	CalleeQName    string
+	CalleeIsMethod bool
+	Node           *ast.CallExpr
 }
 
 // MatchFunc is a function type that matches function call entries.
