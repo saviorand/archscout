@@ -393,7 +393,52 @@ importers := graph.Importers(mod.Pkg("domain/..."))
 
 All methods support the `/...` glob convention.
 
-### 9. Inspect type structure
+### 9. Find interface implementers
+
+When a workspace is loaded with `WithTypeInfo()`, `BuildImplementsGraph` lets
+you ask which concrete types satisfy a given interface and which interfaces
+a given type implements:
+
+```go
+import "github.com/saintedlama/archscout"
+
+ws, err := archscout.LoadWorkspace(ctx, ".", archscout.WithTypeInfo())
+graph := archscout.BuildImplementsGraph(ws)
+
+// Who implements example.com/api.Greeter?
+for _, qname := range graph.Implementers("example.com/api.Greeter") {
+    fmt.Println(qname)
+}
+
+// Restrict to a specific package — useful when generated mocks should be
+// excluded from a "who satisfies this in production code?" query.
+real := graph.Implementers(
+    "example.com/api.Greeter",
+    "example.com/your-project/...",
+)
+
+// Which interfaces does example.com/your-project.PointerGreeter satisfy?
+ifaces := graph.Interfaces("example.com/your-project.PointerGreeter")
+```
+
+Empty interfaces (`interface{}` / `any`) are intentionally not indexed —
+every concrete type trivially implements them, which is rarely the answer
+you want. A type that satisfies an interface only via its pointer method set
+is still listed; the receiver semantics live in the underlying `*types.Named`
+if you need them.
+
+`BuildImplementsGraph` returns an empty (but safe) graph when the workspace
+was loaded without `WithTypeInfo()` or restored from a disk cache, since type
+information is not serialized.
+
+`ImplementsGraph` methods:
+
+| Method                                   | Description                                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Implementers(ifaceQName, patterns...)`  | Sorted concrete-type qnames that satisfy the interface, optionally filtered by package |
+| `Interfaces(typeQName)`                  | Sorted interface qnames the given type satisfies                                       |
+
+### 10. Inspect type structure
 
 `Type` items expose the inner shape of structs and interfaces:
 
@@ -475,6 +520,7 @@ Available format options: `WithRefPackage()`, `WithRefKind()`, `WithoutRefFile()
 - `WithTypeInfo() LoadWorkspaceOption` — load full Go type information so `FunctionCall.CalleePackage`, `CalleeQName` and `CalleeIsMethod` are populated
 - `Module(path)` — helper for building fully-qualified package patterns
 - `BuildPackageGraph(c dependencies.Collection) *PackageGraph` — builds a transitive package graph from a dependency collection
+- `BuildImplementsGraph(ws *Workspace) *ImplementsGraph` — builds an interface-implementation graph from a `WithTypeInfo()` workspace
 - `Rule(name)` — entry point for all rule construction
 
 Rule types expose:

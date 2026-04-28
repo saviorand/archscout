@@ -19,6 +19,7 @@ import (
 	"github.com/saintedlama/archscout/files"
 	"github.com/saintedlama/archscout/functioncalls"
 	"github.com/saintedlama/archscout/functions"
+	"github.com/saintedlama/archscout/implementsgraph"
 	"github.com/saintedlama/archscout/packagegraph"
 	"github.com/saintedlama/archscout/packages"
 	"github.com/saintedlama/archscout/types"
@@ -37,6 +38,25 @@ type Workspace struct {
 	Variables     variables.Collection
 	FunctionCalls functioncalls.Collection
 	Dependencies  dependencies.Collection
+
+	// typed holds resolved go/types packages for every workspace-internal
+	// package. Populated only when LoadWorkspace was called with
+	// WithTypeInfo(); nil otherwise (and after a disk-cache hit, since type
+	// information is not serialized). Consumers reach this through
+	// TypedPackages().
+	typed []*gotypes.Package
+}
+
+// TypedPackages returns the slice of resolved go/types packages indexed by
+// the workspace. Returns nil when the workspace was loaded without
+// WithTypeInfo() or restored from a disk cache.
+//
+// The slice is shared with the workspace; callers must not mutate it.
+func (ws *Workspace) TypedPackages() []*gotypes.Package {
+	if ws == nil {
+		return nil
+	}
+	return ws.typed
 }
 
 // Top-level aliases for convenient consumption from archscout package.
@@ -84,6 +104,27 @@ type PackageGraph = packagegraph.PackageGraph
 //	graph := archscout.BuildPackageGraph(ws.Dependencies.IsNotTest())
 func BuildPackageGraph(c dependencies.Collection) *PackageGraph {
 	return packagegraph.BuildGraph(c)
+}
+
+// ImplementsGraph stores interface-implementation edges over the workspace's
+// resolved go/types packages. See implementsgraph.Graph for the full API.
+type ImplementsGraph = implementsgraph.Graph
+
+// BuildImplementsGraph constructs an ImplementsGraph from the workspace's
+// resolved type information. Returns an empty graph when the workspace was
+// loaded without WithTypeInfo() (or restored from a disk cache, which does
+// not preserve type information):
+//
+//	ws, _ := archscout.LoadWorkspace(ctx, ".", archscout.WithTypeInfo())
+//	graph := archscout.BuildImplementsGraph(ws)
+//	for _, qname := range graph.Implementers("example.com/api.Greeter") {
+//	    fmt.Println(qname)
+//	}
+func BuildImplementsGraph(ws *Workspace) *ImplementsGraph {
+	if ws == nil {
+		return implementsgraph.Build(nil)
+	}
+	return implementsgraph.Build(ws.typed)
 }
 
 // ModuleRoot derives the module root (e.g. "github.com/myorg/myapp") from the
@@ -384,8 +425,12 @@ func parseWorkspace(ctx context.Context, dir string, withTypeInfo bool, report f
 	}
 
 	workspace := workspacebuilder.New()
+	var typedPkgs []*gotypes.Package
 	for _, pkg := range pkgs {
 		report(fmt.Sprintf("Analyzing %s...", pkg.ID))
+		if withTypeInfo && pkg.Types != nil {
+			typedPkgs = append(typedPkgs, pkg.Types)
+		}
 
 		p := packages.Item{
 			ID:      pkg.ID,
@@ -434,6 +479,7 @@ func parseWorkspace(ctx context.Context, dir string, withTypeInfo bool, report f
 		Variables:     snapshot.Variables,
 		FunctionCalls: snapshot.FunctionCalls,
 		Dependencies:  snapshot.Dependencies,
+		typed:         typedPkgs,
 	}, nil
 }
 
