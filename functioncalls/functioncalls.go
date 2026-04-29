@@ -24,6 +24,12 @@ import (
 // at package level (e.g. inside a var/const initializer). For a method,
 // CallerReceiver mirrors the raw receiver text from the function entry —
 // for example, "*System" or "System".
+//
+// CallerQName is the canonical fully-qualified name of the enclosing
+// function, composed identically to functions.Item.QName. It is empty
+// for calls at package level. CallerQName is what consumers should
+// match against to attribute calls to functions; CallerName and
+// CallerReceiver remain for callers that need the unqualified pieces.
 type Item struct {
 	Ref            common.Ref
 	Callee         string
@@ -32,6 +38,7 @@ type Item struct {
 	CalleeIsMethod bool
 	CallerName     string
 	CallerReceiver string
+	CallerQName    string
 	Node           *ast.CallExpr
 }
 

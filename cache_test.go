@@ -143,8 +143,24 @@ func TestSaveAndLoadWorkspaceFromDisk_PreservesRefs(t *testing.T) {
 	for i := range origFuncs {
 		assert.Equal(t, origFuncs[i].Ref, cachedFuncs[i].Ref, "Ref mismatch at index %d", i)
 		assert.Equal(t, origFuncs[i].Name, cachedFuncs[i].Name, "Name mismatch at index %d", i)
+		assert.Equal(t, origFuncs[i].QName, cachedFuncs[i].QName, "QName mismatch at index %d", i)
 		assert.Equal(t, origFuncs[i].Receiver, cachedFuncs[i].Receiver, "Receiver mismatch at index %d", i)
 		assert.Nil(t, cachedFuncs[i].Node, "Node should be nil after cache load")
+	}
+
+	origTypes := ws.Types.All()
+	cachedTypes := loaded.Types.All()
+	require.Equal(t, len(origTypes), len(cachedTypes))
+	for i := range origTypes {
+		assert.Equal(t, origTypes[i].QName, cachedTypes[i].QName, "Type QName mismatch at index %d", i)
+	}
+
+	origCalls := ws.FunctionCalls.All()
+	cachedCalls := loaded.FunctionCalls.All()
+	require.Equal(t, len(origCalls), len(cachedCalls))
+	for i := range origCalls {
+		assert.Equal(t, origCalls[i].CallerQName, cachedCalls[i].CallerQName,
+			"CallerQName mismatch at index %d", i)
 	}
 }
 

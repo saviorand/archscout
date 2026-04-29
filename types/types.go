@@ -9,6 +9,11 @@ import (
 
 // Item represents a type declaration entry.
 //
+// QName is the canonical fully-qualified name "<importpath>.<Name>" and
+// is always populated. It's the join key against
+// functions.Item.Receiver / functions.Item.QName, types.Item.Embeds, and
+// types.Item.Methods (which use it for the receiver-prefix component).
+//
 // Fields lists the declared fields of a struct, including embedded
 // entries (Embedded == true, Name == "").
 //
@@ -24,6 +29,7 @@ import (
 type Item struct {
 	Ref     common.Ref
 	Name    string
+	QName   string
 	Kind    string
 	Fields  []FieldInfo
 	Methods []MethodInfo

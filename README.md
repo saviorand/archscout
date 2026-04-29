@@ -127,6 +127,25 @@ level (for example, inside a `var x = foo()` initializer). For methods,
 `CallerReceiver` mirrors the raw receiver text from `Function.Receiver`
 (e.g. `"*Service"` for a pointer receiver, `"Service"` for a value receiver).
 
+`CallerQName` is the canonical fully-qualified name of the enclosing
+function (or empty at package level), composed identically to
+`Function.QName`. It's the join key when correlating calls back to function
+declarations:
+
+```go
+// Every method on *Service, with each one's set of distinct callees.
+calls := workspace.FunctionCalls.Match(func(call archscout.FunctionCall) bool {
+  return call.CallerQName == "github.com/your-project/api.Service.Run"
+})
+```
+
+`Function.QName` and `Type.QName` are always populated and follow the same
+convention: `<importpath>.<Name>` for plain functions and types,
+`<importpath>.<RecvType>.<Name>` for methods (pointer indirection on the
+receiver stripped). They're the identifier you'd persist in any external
+graph or store; the unqualified `Name` + `Receiver` remain available for
+display purposes.
+
 The default `Callee` field is the syntactic callee text from source — it's
 useful for grep-style matches but treats `crypto.Sign` and `c.Sign` (a method
 on a type aliased `crypto`) as different callees. For cross-package edges,
@@ -284,10 +303,10 @@ archscout.Rule("ui/common must not depend on other internal packages").
 | --------------- | -------------- | ----------------------------------------------------------------------------------- |
 | `Packages`      | `Package`      | `ID`, `Name`, `Files`, `Dependencies()`                                             |
 | `Files`         | `File`         | `Filename`, `Dependencies()`                                                        |
-| `Types`         | `Type`         | `Name`, `Kind`, `Fields`, `Methods`, `Embeds`                                       |
-| `Functions`     | `Function`     | `Name`, `Receiver`                                                                  |
+| `Types`         | `Type`         | `Name`, `QName`, `Kind`, `Fields`, `Methods`, `Embeds`                              |
+| `Functions`     | `Function`     | `Name`, `QName`, `Receiver`                                                         |
 | `Variables`     | `Variable`     | `Name`, `Kind`                                                                      |
-| `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`, `CallerName`, `CallerReceiver` |
+| `FunctionCalls` | `FunctionCall` | `Callee`, `CalleePackage`, `CalleeQName`, `CalleeIsMethod`, `CallerName`, `CallerReceiver`, `CallerQName` |
 | `Dependencies`  | `Dependency`   | `ImportPath`, `WithinWorkspace`, `External`, `StandardLibrary`, `TargetPackageName` |
 
 All collections support:

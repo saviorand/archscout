@@ -145,3 +145,43 @@ func TestFunctionCalls_CallerIdentity_PreservedAcrossClosures(t *testing.T) {
 	}
 	assert.True(t, sawClosureCall, "expected to see strings.ToUpper call inside closure")
 }
+
+func TestFunctionCalls_CallerQName_ComposedFromEnclosingFuncDecl(t *testing.T) {
+	workspace := internaltest.LoadFixtureWorkspace(t, "fixturemod")
+
+	// domain.NewOrder is called from (s *OrderService).PlaceOrder. CallerQName
+	// should be the canonical qname of that method, with pointer indirection
+	// stripped from the receiver.
+	var sawMethod, sawTopLevel bool
+	for _, item := range workspace.FunctionCalls.All() {
+		if item.Callee == "domain.NewOrder" {
+			sawMethod = true
+			assert.Equal(t,
+				"example.com/fixturemod/application.OrderService.PlaceOrder",
+				item.CallerQName,
+				"CallerQName must compose package + receiver type + method name")
+		}
+		// repo.Save is called from main (a top-level FuncDecl with no receiver).
+		if item.Callee == "repo.Save" {
+			sawTopLevel = true
+			assert.Equal(t, "example.com/fixturemod.main", item.CallerQName)
+		}
+	}
+	assert.True(t, sawMethod, "expected to see domain.NewOrder call")
+	assert.True(t, sawTopLevel, "expected to see repo.Save call")
+}
+
+func TestFunctionCalls_CallerQName_EmptyForPackageLevelInitializers(t *testing.T) {
+	workspace := internaltest.LoadFixtureWorkspace(t, "callerfixture")
+
+	// errors.New in `var ErrSentinel = errors.New(...)` has no enclosing
+	// FuncDecl, so CallerQName must be empty.
+	var sawSentinel bool
+	for _, item := range workspace.FunctionCalls.All() {
+		if item.Callee == "errors.New" && item.CallerName == "" {
+			sawSentinel = true
+			assert.Empty(t, item.CallerQName)
+		}
+	}
+	assert.True(t, sawSentinel, "expected to see errors.New at package level")
+}

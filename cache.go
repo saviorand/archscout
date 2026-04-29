@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 2
+const cacheVersion = 3
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
@@ -65,6 +65,7 @@ type fileSnap struct {
 type typeSnap struct {
 	Ref     common.Ref
 	Name    string
+	QName   string
 	Kind    string
 	Fields  []fieldSnap
 	Methods []methodSnap
@@ -87,6 +88,7 @@ type methodSnap struct {
 type functionSnap struct {
 	Ref      common.Ref
 	Name     string
+	QName    string
 	Receiver string
 }
 
@@ -104,6 +106,7 @@ type functionCallSnap struct {
 	CalleeIsMethod bool
 	CallerName     string
 	CallerReceiver string
+	CallerQName    string
 }
 
 type dependencySnap struct {
@@ -296,7 +299,7 @@ func buildSnap(ws *Workspace) workspaceSnap {
 	}
 
 	for _, t := range ws.Types.All() {
-		ts := typeSnap{Ref: t.Ref, Name: t.Name, Kind: t.Kind, Embeds: append([]string(nil), t.Embeds...)}
+		ts := typeSnap{Ref: t.Ref, Name: t.Name, QName: t.QName, Kind: t.Kind, Embeds: append([]string(nil), t.Embeds...)}
 		for _, f := range t.Fields {
 			ts.Fields = append(ts.Fields, fieldSnap{
 				Name:      f.Name,
@@ -313,7 +316,9 @@ func buildSnap(ws *Workspace) workspaceSnap {
 	}
 
 	for _, fn := range ws.Functions.All() {
-		snap.Functions = append(snap.Functions, functionSnap{Ref: fn.Ref, Name: fn.Name, Receiver: fn.Receiver})
+		snap.Functions = append(snap.Functions, functionSnap{
+			Ref: fn.Ref, Name: fn.Name, QName: fn.QName, Receiver: fn.Receiver,
+		})
 	}
 
 	for _, v := range ws.Variables.All() {
@@ -329,6 +334,7 @@ func buildSnap(ws *Workspace) workspaceSnap {
 			CalleeIsMethod: fc.CalleeIsMethod,
 			CallerName:     fc.CallerName,
 			CallerReceiver: fc.CallerReceiver,
+			CallerQName:    fc.CallerQName,
 		})
 	}
 
@@ -374,6 +380,7 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 		item := types.Item{
 			Ref:    ts.Ref,
 			Name:   ts.Name,
+			QName:  ts.QName,
 			Kind:   ts.Kind,
 			Embeds: append([]string(nil), ts.Embeds...),
 		}
@@ -393,7 +400,9 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 	}
 
 	for _, fs := range snap.Functions {
-		wb.AddFunction(functions.Item{Ref: fs.Ref, Name: fs.Name, Receiver: fs.Receiver})
+		wb.AddFunction(functions.Item{
+			Ref: fs.Ref, Name: fs.Name, QName: fs.QName, Receiver: fs.Receiver,
+		})
 	}
 
 	for _, vs := range snap.Variables {
@@ -409,6 +418,7 @@ func snapToWorkspace(snap workspaceSnap) *Workspace {
 			CalleeIsMethod: fcs.CalleeIsMethod,
 			CallerName:     fcs.CallerName,
 			CallerReceiver: fcs.CallerReceiver,
+			CallerQName:    fcs.CallerQName,
 		})
 	}
 

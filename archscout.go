@@ -590,6 +590,7 @@ func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
 		v.workspace.AddType(types.Item{
 			Ref:     newRef(v.pkg, v.filename, node, common.RefKindType, typeMatchText(node.Name.Name, exprKind(node.Type))),
 			Name:    node.Name.Name,
+			QName:   typeQName(v.pkg.ID, node.Name.Name),
 			Kind:    exprKind(node.Type),
 			Fields:  fields,
 			Methods: methods,
@@ -605,6 +606,7 @@ func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
 		v.workspace.AddFunction(functions.Item{
 			Ref:      newRef(v.pkg, v.filename, node, common.RefKindFunction, functionMatchText(node.Name.Name, receiver)),
 			Name:     node.Name.Name,
+			QName:    funcQName(v.pkg.ID, receiver, node.Name.Name),
 			Receiver: receiver,
 			Node:     node,
 		})
@@ -634,13 +636,15 @@ func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
 		}
 
 	case *ast.CallExpr:
-		callerName := ""
-		callerReceiver := ""
+		var (
+			callerName, callerReceiver, callerQName string
+		)
 		if v.enclosing != nil {
 			callerName = v.enclosing.Name.Name
 			if v.enclosing.Recv != nil && len(v.enclosing.Recv.List) > 0 {
 				callerReceiver = exprText(v.enclosing.Recv.List[0].Type)
 			}
+			callerQName = funcQName(v.pkg.ID, callerReceiver, callerName)
 		}
 		calleePkg, calleeQName, isMethod := resolveCallee(v.typesInfo, node.Fun)
 		v.workspace.AddFunctionCall(functioncalls.Item{
@@ -651,11 +655,33 @@ func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
 			CalleeIsMethod: isMethod,
 			CallerName:     callerName,
 			CallerReceiver: callerReceiver,
+			CallerQName:    callerQName,
 			Node:           node,
 		})
 	}
 
 	return v
+}
+
+// typeQName composes a type's canonical fully-qualified name as
+// "<importpath>.<TypeName>".
+func typeQName(pkgID, typeName string) string {
+	return pkgID + "." + typeName
+}
+
+// funcQName composes a function or method's canonical fully-qualified
+// name. For methods, pointer indirection on the receiver is stripped so
+// the qname is stable across pointer/value declarations of the same
+// method set.
+//
+//	plain function: "<importpath>.<Name>"
+//	method:         "<importpath>.<RecvType>.<Name>"
+func funcQName(pkgID, receiver, name string) string {
+	if receiver == "" {
+		return pkgID + "." + name
+	}
+	recv := strings.TrimPrefix(receiver, "*")
+	return pkgID + "." + recv + "." + name
 }
 
 // resolveCallee inspects type information to derive the import path and
