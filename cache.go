@@ -27,7 +27,7 @@ import (
 
 // cacheVersion must be incremented whenever the snapshot layout changes to
 // prevent stale cache files from being decoded.
-const cacheVersion = 3
+const cacheVersion = 2
 
 // workspaceSnap is the gob-serializable snapshot of a Workspace.
 //
