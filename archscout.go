@@ -581,7 +581,7 @@ func (v *entryVisitor) Visit(n ast.Node) ast.Visitor {
 
 	switch node := n.(type) {
 	case *ast.TypeSpec:
-		fields, fieldEmbeds := extractStructFields(node, v.typesInfo)
+		fields, fieldEmbeds := extractStructFields(v.pkg.FileSet, node, v.typesInfo)
 		methods, ifaceEmbeds := extractInterfaceMethods(v.pkg.ID, node, v.typesInfo)
 		embeds := fieldEmbeds
 		if len(ifaceEmbeds) > 0 {
@@ -891,6 +891,27 @@ func exprKind(expr ast.Expr) string {
 	}
 }
 
+// typeText renders a type expression as source-equivalent text, handling
+// every AST shape (named types, pointers, maps, slices, arrays, channels,
+// function types, generic instantiations) by delegating to go/printer.
+//
+// Falls back to exprText when the FileSet is unavailable (e.g. on a test
+// item synthesized without a parser run). Multi-line printer output is
+// collapsed to a single line so the result is safe to use as a single
+// attribute value.
+func typeText(fset *token.FileSet, expr ast.Expr) string {
+	if expr == nil {
+		return ""
+	}
+	if fset != nil {
+		var buf bytes.Buffer
+		if err := printer.Fprint(&buf, fset, expr); err == nil {
+			return strings.Join(strings.Fields(buf.String()), " ")
+		}
+	}
+	return exprText(expr)
+}
+
 func exprText(expr ast.Expr) string {
 	switch e := expr.(type) {
 	case *ast.Ident:
@@ -930,8 +951,10 @@ func enclosingGenDecl(file *ast.File, target *ast.ValueSpec) (*ast.GenDecl, bool
 // extractStructFields walks a TypeSpec for a struct type and returns the
 // declared fields plus the syntactic identifiers of any embedded fields.
 //
-// Returns nil slices for non-struct types.
-func extractStructFields(node *ast.TypeSpec, typesInfo *gotypes.Info) ([]types.FieldInfo, []string) {
+// Returns nil slices for non-struct types. Field type names are rendered via
+// go/printer so composite types (maps, slices, function types, etc.) appear
+// in full source-equivalent form rather than being dropped.
+func extractStructFields(fset *token.FileSet, node *ast.TypeSpec, typesInfo *gotypes.Info) ([]types.FieldInfo, []string) {
 	st, ok := node.Type.(*ast.StructType)
 	if !ok || st.Fields == nil {
 		return nil, nil
@@ -940,7 +963,7 @@ func extractStructFields(node *ast.TypeSpec, typesInfo *gotypes.Info) ([]types.F
 	var fields []types.FieldInfo
 	var embeds []string
 	for _, f := range st.Fields.List {
-		typeName := exprText(f.Type)
+		typeName := typeText(fset, f.Type)
 		typeQName := resolveTypeQName(typesInfo, f.Type)
 		tag := unquoteTag(f.Tag)
 

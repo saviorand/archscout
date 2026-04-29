@@ -25,8 +25,8 @@ func TestTypeFields_StructFieldsAndEmbeds(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typestructfixture", archscout.WithTypeInfo())
 	user := findType(t, ws, "User")
 
-	require.Len(t, user.Fields, 5,
-		"expected one embedded entry plus Name, Email, Age, Year")
+	require.Len(t, user.Fields, 9,
+		"embed + Name + Email + Age + Year + Roles + Sessions + Notify + Hook")
 
 	// Embedded field appears first in source order with Embedded == true.
 	embed := user.Fields[0]
@@ -55,6 +55,26 @@ func TestTypeFields_StructFieldsAndEmbeds(t *testing.T) {
 	assert.Equal(t, "Year", year.Name)
 	assert.Equal(t, "int", age.TypeName)
 	assert.Equal(t, "int", year.TypeName)
+
+	// Composite types render via go/printer rather than the empty-string
+	// fallback that exprText produced before typeText was added.
+	roles := user.Fields[5]
+	assert.Equal(t, "Roles", roles.Name)
+	assert.Equal(t, "[]string", roles.TypeName)
+	assert.Empty(t, roles.TypeQName, "composite types have no Named qname")
+
+	sessions := user.Fields[6]
+	assert.Equal(t, "Sessions", sessions.Name)
+	assert.Equal(t, "map[inner.SessionID]*inner.Base", sessions.TypeName)
+	assert.Empty(t, sessions.TypeQName)
+
+	notify := user.Fields[7]
+	assert.Equal(t, "Notify", notify.Name)
+	assert.Equal(t, "chan inner.Event", notify.TypeName)
+
+	hook := user.Fields[8]
+	assert.Equal(t, "Hook", hook.Name)
+	assert.Equal(t, "func(in string) (string, error)", hook.TypeName)
 
 	assert.Equal(t,
 		[]string{"example.com/typestructfixture/inner.Base"},
@@ -90,12 +110,17 @@ func TestTypeStructure_WithoutTypeInfoLeavesQNamesEmpty(t *testing.T) {
 	ws := internaltest.LoadFixtureWorkspace(t, "typestructfixture")
 
 	user := findType(t, ws, "User")
-	require.Len(t, user.Fields, 5)
+	require.Len(t, user.Fields, 9)
 
 	for _, f := range user.Fields {
 		assert.Empty(t, f.TypeQName,
 			"TypeQName should be empty without WithTypeInfo: %s", f.Name)
 	}
+
+	// typeText still renders composite types correctly without type info —
+	// it only relies on the FileSet, which is always present.
+	sessions := user.Fields[6]
+	assert.Equal(t, "map[inner.SessionID]*inner.Base", sessions.TypeName)
 
 	// Embeds falls back to syntactic source text in the absence of type info.
 	assert.Equal(t, []string{"inner.Base"}, user.Embeds)
